@@ -54,17 +54,11 @@ ControllerType detect_controller_type(libusb_device *device) {
       DESC.idProduct == PRODUCT_STEAM_CONTROLLER) {
     return CONTROLLER_TYPE_OTHER;
   }
-
-  if (DESC.bDeviceClass == 0x00 && /* Each interface defines its own class */
-      DESC.bDeviceSubClass == 0x00 && DESC.bDeviceProtocol == 0x00) {
-    return CONTROLLER_TYPE_GENERIC_HID;
-  }
-
   return CONTROLLER_TYPE_UNKNOWN;
 }
 int is_controller(libusb_device *device) {
   ControllerType type = detect_controller_type(device);
-  return 0;
+  return (type != CONTROLLER_TYPE_UNKNOWN);
 }
 
 int get_controller_name(libusb_device *device, char *name, size_t name_size) {
@@ -78,10 +72,10 @@ int get_controller_name(libusb_device *device, char *name, size_t name_size) {
   const char *type_name = controller_type_to_string(type);
 
   if (type != CONTROLLER_TYPE_UNKNOWN) {
-    snprintf(name, name_size, "%s (0x%04x:0x%04x", type_name, DESC.idVendor,
+    snprintf(name, name_size, "%s (0x%04x:0x%04x)", type_name, DESC.idVendor,
              DESC.idProduct);
   } else {
-    snprintf(name, name_size, "Unknown Controller (0x%04x:0x%04x)", type_name,
+    snprintf(name, name_size, "Unknown Controller (0x%04x:0x%04x)",
              DESC.idVendor, DESC.idProduct);
   }
   return 0;
@@ -135,7 +129,7 @@ int find_all_controllers(libusb_context *lctx, ControllerInfo **controllers,
     }
   }
 
-  libusb_free_device_list(list, 0);
+  libusb_free_device_list(list, 1);
   *controllers = found_controllers;
   *count = controller_count;
   return 0;

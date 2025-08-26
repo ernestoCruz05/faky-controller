@@ -56,5 +56,5 @@ int get_controller_name(libusb_device *device, char *name, size_t name_size);
 int find_all_controllers(libusb_context *lctx, ControllerInfo **controllers,
                          int *count);
 const char *controller_type_to_string(ControllerType type);
-
+void free_controllers(ControllerInfo *controllers, int count);
 #endif /* CONTROLLER_H */
