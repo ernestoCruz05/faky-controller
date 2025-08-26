@@ -31,7 +31,6 @@ int read_input(libusb_device_handle *handle, ControllerState *state) {
     return 0;
 
   if (actual_lenght >= 20) {
-    // Parse buttons correctly
     uint8_t buttons1 = buffer[2];
     uint8_t buttons2 = buffer[3];
 
@@ -50,8 +49,6 @@ int read_input(libusb_device_handle *handle, ControllerState *state) {
     state->x_button = (buttons2 & 0x40) ? 1 : 0; // Bit 6 - X
     state->y_button = (buttons2 & 0x80) ? 1 : 0; // Bit 7 - Y
 
-    // Other buttons - we need to test these to see where they are
-    // For now, let's assume they might be in the remaining bits
     state->lb_button = 0;    // Need to test LB
     state->rb_button = 0;    // Need to test RB
     state->back_button = 0;  // Need to test Back
@@ -67,8 +64,7 @@ int read_input(libusb_device_handle *handle, ControllerState *state) {
 }
 
 int wait_for_button_press(libusb_device_handle *handle, const char *button_name,
-                          uint8_t *found_byte,
-                          uint8_t *found_bit) { // Use uint8_t, not u_int8_t
+                          uint8_t *found_byte, uint8_t *found_bit) {
   uint8_t buffer[MAX_INPUT_PACKET_SIZE];
   uint8_t last_buffer[MAX_INPUT_PACKET_SIZE] = {0};
   int attempts = 0;
@@ -76,15 +72,14 @@ int wait_for_button_press(libusb_device_handle *handle, const char *button_name,
   printf("Press the %s button and hold until told\n",
          button_name); // Add newline
 
-  while (attempts < 1200) { // Increase timeout attempts
-    int actual_length = 0;  // Fix spelling: actual_length, not actual_lenght
+  while (attempts < 1200) {
+    int actual_length = 0;
     int ret = libusb_interrupt_transfer(handle, 0x81, buffer, sizeof(buffer),
                                         &actual_length, 100);
 
-    if (ret ==
-        LIBUSB_ERROR_TIMEOUT) { // Check for timeout, not LIBUSB_ERROR_OTHER
+    if (ret == LIBUSB_ERROR_TIMEOUT) {
       attempts++;
-      usleep(10000); // Small delay between attempts
+      usleep(10000);
       continue;
     }
 
@@ -93,7 +88,6 @@ int wait_for_button_press(libusb_device_handle *handle, const char *button_name,
       continue;
     }
 
-    // DEBUG: Print raw data to see what's happening
     for (int byte = 2; byte < 6; byte++) {
       for (int bit = 0; bit < 8; bit++) {
         uint8_t mask = (1 << bit);
@@ -102,11 +96,10 @@ int wait_for_button_press(libusb_device_handle *handle, const char *button_name,
           *found_bit = bit;
 
           printf("Detected %s button on byte %d bit %d\n", button_name,
-                 *found_byte, *found_bit); // Add * to dereference pointers
+                 *found_byte, *found_bit);
 
           printf("Please release the button\n");
 
-          // Wait for button release
           int release_attempts = 0;
           while (release_attempts < 50) {
             ret = libusb_interrupt_transfer(handle, 0x81, buffer,
@@ -137,7 +130,6 @@ int interactive_setup(libusb_device_handle *handle, ControllerConfig *config) {
   printf("=== Controller Interactive Setup ===\n");
   printf("We'll now map each button. Press each button when prompted.\n\n");
 
-  // Map each button
   if (wait_for_button_press(handle, "A", &config->a_button_byte,
                             &config->a_button_bit) != 0)
     return -1;
@@ -189,8 +181,7 @@ int interactive_setup(libusb_device_handle *handle, ControllerConfig *config) {
 
   printf("Enter a name for this controller configuration: ");
   fgets(config->controller_name, sizeof(config->controller_name), stdin);
-  config->controller_name[strcspn(config->controller_name, "\n")] =
-      0; // Remove newline
+  config->controller_name[strcspn(config->controller_name, "\n")] = 0;
 
   printf("\nSetup complete! Configuration saved.\n");
   return 0;
@@ -214,7 +205,6 @@ int read_controller_input_with_config(libusb_device_handle *handle,
     return -1;
   }
 
-  // Use the configuration to map buttons
   state->a_button =
       (buffer[config->a_button_byte] & (1 << config->a_button_bit)) ? 1 : 0;
   state->b_button =
@@ -249,7 +239,6 @@ int read_controller_input_with_config(libusb_device_handle *handle,
   state->dpad_right =
       (buffer[config->dpad_right_byte] & (1 << config->dpad_right_bit)) ? 1 : 0;
 
-  // Analog inputs (these are usually standard)
   state->left_trigger = buffer[4];
   state->right_trigger = buffer[5];
   state->left_thumb_x = (int16_t)((buffer[7] << 8) | buffer[6]);
