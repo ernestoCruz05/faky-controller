@@ -2,6 +2,10 @@
 #define CONTROLLER_H
 
 #include <libusb-1.0/libusb.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 typedef enum {
   CONTROLLER_TYPE_UNKNOWN = 0,
@@ -40,6 +44,20 @@ typedef enum {
 
 #define PRODUCT_STEAM_CONTROLLER 0x1102
 
+#define MAX_INPUT_PACKET_SIZE 64
+
+#define XBOX_BUTTON_A 0
+#define XBOX_BUTTON_B 1
+#define XBOX_BUTTON_X 2
+#define XBOX_BUTTON_Y 3
+#define XBOX_BUTTON_LB 4
+#define XBOX_BUTTON_RB 5
+#define XBOX_BUTTON_BACK 6
+#define XBOX_BUTTON_START 7
+#define XBOX_BUTTON_HOME 8
+#define XBOX_BUTTON_L3 9
+#define XBOX_BUTTON_R3 10
+
 typedef struct {
   libusb_device *device;
   ControllerType type;
@@ -47,6 +65,16 @@ typedef struct {
   uint16_t product_id;
   char name[64];
 } ControllerInfo;
+
+typedef struct {
+  uint8_t buttons[4];    // Button states
+  int16_t left_thumb_x;  // Left thumbstick X
+  int16_t left_thumb_y;  // Left thumbstick Y
+  int16_t right_thumb_x; // Right thumbstick X
+  int16_t right_thumb_y; // Right thumbstick Y
+  uint8_t left_trigger;  // Left trigger (0-255)
+  uint8_t right_trigger; // Right trigger (0-255)
+} ControllerState;
 
 ControllerType detect_controller_type(libusb_device *device);
 int is_controller(libusb_device *device);
@@ -57,4 +85,9 @@ int find_all_controllers(libusb_context *lctx, ControllerInfo **controllers,
                          int *count);
 const char *controller_type_to_string(ControllerType type);
 void free_controllers(ControllerInfo *controllers, int count);
+int read_input(libusb_device_handle *handle, ControllerState *state);
+int start_input_reader(libusb_device_handle *handle);
+void stop_input_reader();
+int is_button_pressed(const ControllerState *state, int button);
+
 #endif /* CONTROLLER_H */

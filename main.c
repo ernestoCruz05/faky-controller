@@ -1,5 +1,6 @@
 #include "main.h"
 #include "controller.h"
+#include <libusb-1.0/libusb.h>
 #include <stdlib.h>
 
 int check_root_permissions() {
@@ -36,6 +37,13 @@ int discover_devices(libusb_context *lctx) {
     libusb_device_handle *handle;
     if (open_controller(controllers[i].device, &handle) == 0) {
       printf("   Successfully opened\n");
+      if (start_input_reader(handle) == 0) {
+        printf("Reading inputs");
+        while (1) {
+          sleep(1);
+        }
+        stop_input_reader();
+      }
       close_controller(handle);
     } else {
       printf("   Failed to open\n");

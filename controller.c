@@ -1,7 +1,143 @@
 #include "controller.h"
 #include <libusb-1.0/libusb.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <unistd.h>
+
+static volatile int keep_reading = 0;
+static libusb_device_handle *active_handle = NULL;
+
+/*
+ *
+ * Por agora estou a utilizar Synchronous device I/O q é blocking segundo a
+ * documentação da libusb Talvez troque para Asynchronous device I/O para fazer
+ * macros, complex binds e GUI(no maximo vou usar um TUI), etc...
+ *
+ */
+
+int read_input(libusb_device_handle *handle, ControllerState *state) {
+  uint8_t buffer[MAX_INPUT_PACKET_SIZE]; // Devo mudar isto para usar a
+                                         // libusb_get_max_iso_packet_size()
+  int actual_lenght;
+  int ret;
+
+  // So para Xbox360, tenho que usar um switch mais tarde
+  ret = libusb_interrupt_transfer(handle, 0x81, buffer, sizeof(buffer),
+                                  &actual_lenght, 0);
+
+  if (ret == LIBUSB_ERROR_TIMEOUT)
+    return 0;
+
+  if (actual_lenght >= 20) {
+
+    state->buttons[0] = buffer[2];
+    state->buttons[1] = buffer[4];
+
+    state->left_thumb_x = (int16_t)((buffer[7] << 8) | buffer[6]);
+    state->left_thumb_y = (int16_t)((buffer[9] << 8) | buffer[8]);
+    state->right_thumb_x = (int16_t)((buffer[11] << 8) | buffer[10]);
+    state->right_thumb_y = (int16_t)((buffer[13] << 8) | buffer[12]);
+
+    state->left_trigger = buffer[14];
+    state->right_trigger = buffer[15];
+
+    return 1;
+  }
+
+  return 0;
+}
+
+void *input_reader_thread(void *arg) {
+  (void)arg;
+  ControllerState state;
+
+  while (keep_reading) {
+    int result = read_input(active_handle, &state);
+
+    if (result > 0) {
+      printf("Buttons: %02x %02x | L: (%d,%d) | R: (%d,%d) | Triggers: %d,%d\n",
+             state.buttons[0], state.buttons[1], state.left_thumb_x,
+             state.left_thumb_y, state.right_thumb_x, state.right_thumb_y,
+             state.left_trigger, state.right_trigger);
+    } else if (result < 0) {
+      break;
+    }
+    usleep(500000);
+  }
+  return NULL;
+}
+
+int start_input_reader(libusb_device_handle *handle) {
+  pthread_t thread;
+  int ret;
+
+  if (libusb_kernel_driver_active(handle, 0) == 1) {
+    ret = libusb_detach_kernel_driver(handle, 0);
+    if (ret != 0) {
+      fprintf(stderr, "Failed to detach kernel driver: %s\n",
+              libusb_strerror(ret));
+      return -1;
+    }
+    printf("Kernel driver detached");
+  }
+  ret = libusb_claim_interface(handle, 0);
+  if (ret != 0) {
+    fprintf(stderr, "Failed to claim the interface: %s\n",
+            libusb_strerror(ret));
+    return -1;
+  }
+
+  active_handle = handle;
+  keep_reading = 1;
+
+  ret = pthread_create(&thread, NULL, input_reader_thread, NULL);
+  if (ret != 0) {
+    fprintf(stderr, "Failed to innitialize reader thread\n");
+    keep_reading = 0;
+    libusb_release_interface(handle, 0);
+    return -1;
+  }
+
+  pthread_detach(thread);
+  return 0;
+}
+
+void stop_input_reader() {
+  keep_reading = 0;
+  if (active_handle) {
+    libusb_release_interface(active_handle, 0);
+    active_handle = NULL;
+  }
+}
+
+int is_button_pressed(const ControllerState *state, int button) {
+  switch (button) {
+  case XBOX_BUTTON_A:
+    return (state->buttons[0] & 0x01);
+  case XBOX_BUTTON_B:
+    return (state->buttons[0] & 0x02);
+  case XBOX_BUTTON_X:
+    return (state->buttons[0] & 0x04);
+  case XBOX_BUTTON_Y:
+    return (state->buttons[0] & 0x08);
+  case XBOX_BUTTON_LB:
+    return (state->buttons[0] & 0x10);
+  case XBOX_BUTTON_RB:
+    return (state->buttons[0] & 0x20);
+  case XBOX_BUTTON_BACK:
+    return (state->buttons[0] & 0x40);
+  case XBOX_BUTTON_START:
+    return (state->buttons[0] & 0x80);
+  case XBOX_BUTTON_HOME:
+    return (state->buttons[1] & 0x04);
+  case XBOX_BUTTON_L3:
+    return (state->buttons[1] & 0x20);
+  case XBOX_BUTTON_R3:
+    return (state->buttons[1] & 0x40);
+  default:
+    return 0;
+  }
+}
 
 ControllerType detect_controller_type(libusb_device *device) {
   struct libusb_device_descriptor DESC;
