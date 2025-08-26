@@ -1,7 +1,13 @@
 #include "main.h"
 #include "controller.h"
+#include <ctype.h>
 #include <libusb-1.0/libusb.h>
+#include <signal.h>
 #include <stdlib.h>
+
+static volatile int running = 0;
+
+void signal_handler(int sig) { running = 0; }
 
 int check_root_permissions() {
   if (geteuid() != 0) {
@@ -37,13 +43,49 @@ int discover_devices(libusb_context *lctx) {
     libusb_device_handle *handle;
     if (open_controller(controllers[i].device, &handle) == 0) {
       printf("   Successfully opened\n");
-      if (start_input_reader(handle) == 0) {
-        printf("Reading inputs");
-        while (1) {
-          sleep(1);
+
+      printf("Would you like to configure this controller? [y/n]");
+      char choice;
+      scanf("%c", &choice);
+      getchar();
+
+      if (tolower(choice) == 'y') {
+        ControllerConfig config;
+
+        printf("Starting the interactive setup for %s...\n",
+               controllers[i].name);
+        if (interactive_setup(handle, &config) == 0) {
+          char filename[64];
+          snprintf(filename, sizeof(filename), "controller_%04x_%04x.cfg",
+                   controllers[i].vendor_id, controllers[i].product_id);
+          save_config(&config, filename);
+          printf("   Configuration saved to %s\n", filename);
+
+          printf("   Testing configuration. Press buttons to verify (Ctrl+C to "
+                 "stop)...\n");
+          ControllerState state;
+
+          running = 1;
+          while (running) {
+            if (read_controller_input_with_config(handle, &state, &config) >
+                0) {
+              printf(
+                  "   A:%d B:%d X:%d Y:%d | LB:%d RB:%d | Back:%d Start:%d | ",
+                  state.a_button, state.b_button, state.x_button,
+                  state.y_button, state.lb_button, state.rb_button,
+                  state.back_button, state.start_button);
+              printf("L3:%d R3:%d Xbox:%d | D-pad: U:%d D:%d L:%d R:%d\n",
+                     state.l3_button, state.r3_button, state.xbox_button,
+                     state.dpad_up, state.dpad_down, state.dpad_left,
+                     state.dpad_right);
+            }
+            usleep(10000);
+          }
         }
-        stop_input_reader();
+      } else {
+        printf("load...");
       }
+
       close_controller(handle);
     } else {
       printf("   Failed to open\n");
@@ -63,6 +105,8 @@ int main() {
     fprintf(stderr, "Please run with: sudo %s\n", "main");
     return 1;
   }
+
+  signal(SIGINT, signal_handler);
 
   libusb_context *lctx = NULL;
   int acc = libusb_init_context(&lctx, NULL, 0);
