@@ -18,6 +18,11 @@ $(TARGET): $(OBJS)
 clean:
 	rm -f $(TARGET) $(OBJS)
 
+install-udev:
+	sudo cp 99-xbox-controller.rules /etc/udev/rules.d/
+	sudo udevadm control --reload-rules
+	sudo udevadm trigger
+
 run: $(TARGET)
 	sudo ./$(TARGET)
 
