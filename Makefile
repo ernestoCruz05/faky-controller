@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c99 -pedantic
+CFLAGS = -Wall -Wextra -std=c99 -pedantic -D_XOPEN_SOURCE=500
 LDFLAGS = -lusb-1.0
 
 TARGET = main
