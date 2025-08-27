@@ -1,4 +1,4 @@
-# Faky ##  Features
+# Faky Controller
 - USB controller detection via libusb
 - ---
 
