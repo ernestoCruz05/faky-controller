@@ -111,7 +111,6 @@ void print_usage(const char *program_name) {
 }
 
 int main(int argc, char *argv[]) {
-  // Parse command line arguments
   int use_tui = 0;
   
   for (int i = 1; i < argc; i++) {
@@ -160,22 +159,18 @@ int main(int argc, char *argv[]) {
   int found;
   
   if (use_tui) {
-    // Initialize TUI
     if (init_tui() != 0) {
       fprintf(stderr, "Failed to initialize TUI\n");
       libusb_exit(lctx);
       return 1;
     }
     
-    // Run TUI configuration
     run_tui_config(lctx);
     
-    // Cleanup TUI
     cleanup_tui();
     
-    found = 1; // Assume we found something if TUI was used
+    found = 1; 
   } else {
-    // Use CLI mode
     found = discover_devices(lctx);
   }
 
