@@ -1,11 +1,11 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c99 -pedantic -D_XOPEN_SOURCE=500
-LDFLAGS = -lusb-1.0
+LDFLAGS = -lusb-1.0 -lncurses -lmenu -lform
 
 TARGET = main
-SRCS = main.c controller.c
+SRCS = main.c controller.c tui.c
 OBJS = $(SRCS:.c=.o)
-HEADERS = main.h controller.h
+HEADERS = main.h controller.h tui.h
 
 all: $(TARGET)
 
@@ -26,4 +26,10 @@ install-udev:
 run: $(TARGET)
 	sudo ./$(TARGET)
 
-.PHONY: all clean install-udev run
+run-tui: $(TARGET)
+	sudo ./$(TARGET) --tui
+
+run-cli: $(TARGET)
+	sudo ./$(TARGET) --cli
+
+.PHONY: all clean install-udev run run-tui run-cli

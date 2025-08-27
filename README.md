@@ -1,4 +1,62 @@
-# Faky Controller
+# Faky ##  Features
+- USB controller detection via libusb
+- ---
+
+##  Text User Interface (TUI) Features
+
+The TUI mode provides an intuitive interface for controller configuration:
+
+### Main Menu
+- **Configure New Controller**: Set up button mappings for connected controllers
+- **Load Existing Configuration**: Browse and load saved controller profiles
+- **About**: Information about the application
+
+### Controller Configuration Wizard
+1. **Controller Detection**: Automatically scans and lists connected controllers
+2. **Button Mapping**: Interactive process to map each controller button to keyboard keys
+   - Visual progress indicator showing which buttons are mapped
+   - Real-time feedback when controller buttons are pressed
+   - Step-by-step guidance for each button mapping
+3. **Configuration Save**: Save custom profiles with meaningful names
+
+### Navigation
+- **Arrow Keys**: Navigate menus and options
+- **Enter**: Select items or confirm actions
+- **ESC**: Go back or cancel operations
+- **Q**: Quick quit from main menu
+
+### Visual Elements
+- Color-coded interface with highlighting
+- Progress indicators for mapping completion
+- Clear error messages and confirmations
+- Responsive layout that adapts to terminal size
+
+---
+
+##  Build from Sourcenteractive Text ## ▶ Usage
+
+### Interactive TUI Mode (Recommended)
+
+Launch the Text User Interface for easy controller configuration:
+
+```bash
+sudo ./main --tui
+```
+
+The TUI provides:
+- **Controller Detection**: Automatically finds connected controllers
+- **Step-by-step Configuration**: Interactive button mapping wizard
+- **Visual Feedback**: Shows which buttons are pressed in real-time
+- **Configuration Management**: Save and load controller profiles
+- **User-friendly Interface**: Navigate with arrow keys, no typing required
+
+### Command Line Mode
+
+Run with sudo (if udev rules not installed):r Interface (TUI)** for easy configuration
+- Mapping of controller inputs to keyboard/mouse events
+- Optional udev rules for non-root access
+- Modular code layout for adding new controllers and mappings
+- Save and load controller configurationsoller
 
 A controller → mouse/keyboard input translator written in C using [libusb](https://libusb.info/).  
 This tool aims to let standard game controllers emulate keyboard and mouse input, useful for apps/games without native controller support.
@@ -17,6 +75,7 @@ This tool aims to let standard game controllers emulate keyboard and mouse input
 
 - GCC (or Clang) compiler
 - `libusb-1.0` **development** libraries
+- `ncurses` **development** libraries (for TUI)
 - `make`
 - `sudo` privileges (for udev rule installation)
 
@@ -25,13 +84,13 @@ Install libusb dev package:
 ```bash
 # Ubuntu/Debian
 sudo apt-get update
-sudo apt-get install -y build-essential libusb-1.0-0-dev
+sudo apt-get install -y build-essential libusb-1.0-0-dev libncurses5-dev
 
 # Fedora/RHEL
-sudo dnf install -y libusb1-devel
+sudo dnf install -y libusb1-devel ncurses-devel
 
 # Arch Linux
-sudo pacman -S --needed libusb
+sudo pacman -S --needed libusb ncurses
 ```
 
 ---
@@ -78,16 +137,30 @@ sudo udevadm trigger
 Run with sudo (if udev rules not installed):
 
 ```bash
-sudo ./main
+sudo ./main --cli
 ```
 
 Run without sudo (after installing udev rules):
 
 ```bash
-./main
+./main --cli
 ```
 
-Build and run in one command:
+### Build and Run Commands
+
+Build and run with TUI:
+
+```bash
+make run-tui
+```
+
+Build and run with CLI:
+
+```bash
+make run-cli
+```
+
+Build and run in one command (default CLI):
 
 ```bash
 make run
@@ -109,10 +182,13 @@ faky-controller/
 ├── main.h                  # Global includes/types for main
 ├── controller.c            # Controller detection and enumeration (libusb)
 ├── controller.h            # Controller types, constants, prototypes
+├── tui.c                   # Text User Interface implementation
+├── tui.h                   # TUI types and function prototypes
 ├── input.c                 # (Planned) OS input event emission (kbd/mouse)
 ├── input.h                 # Input handling prototypes
 ├── translator.c            # (Planned) Mapping logic (controller → input events)
 ├── translator.h            # Translator configs & APIs
+├── utils.h                 # Common utility functions and macros
 ├── Makefile                # Build system with run/install-udev targets
 ├── 99-faky-controller.rules# Udev rules for non-root access
 └── README.md               # This file
@@ -125,9 +201,10 @@ faky-controller/
 Using the provided Makefile (recommended):
 
 ```bash
-make          # builds ./main
-make run      # builds and runs with sudo if needed
-make clean    # removes build artifacts
+make run-tui     # builds and runs with TUI interface
+make run-cli     # builds and runs with CLI interface  
+make run         # builds and runs with CLI interface (default)
+make clean       # removes build artifacts
 ```
 
 Manual compilation example:
@@ -135,12 +212,13 @@ Manual compilation example:
 ```bash
 gcc -c main.c -o main.o
 gcc -c controller.c -o controller.o
+gcc -c tui.c -o tui.o
 gcc -c input.c -o input.o
 gcc -c translator.c -o translator.o
-gcc -o main main.o controller.o input.o translator.o -lusb-1.0
+gcc -o main main.o controller.o tui.o input.o translator.o -lusb-1.0 -lncurses
 ```
 
-> If the linker can't find libusb, ensure `libusb-1.0-0-dev` (or distro equivalent) is installed and that your compiler can find it (you may need `pkg-config --cflags --libs libusb-1.0`).
+> If the linker can't find libusb or ncurses, ensure `libusb-1.0-0-dev` and `libncurses5-dev` (or distro equivalent) are installed and that your compiler can find them (you may need `pkg-config --cflags --libs libusb-1.0 ncurses`).
 
 ---
 
