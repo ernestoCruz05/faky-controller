@@ -1,13 +1,15 @@
 #include "main.h"
 #include "controller.h"
+#include "tui.h"
 #include <ctype.h>
 #include <libusb-1.0/libusb.h>
 #include <signal.h>
 #include <stdlib.h>
+#include <string.h>
 
 static volatile int running = 0;
 
-void signal_handler(int sig) { running = 0; }
+void signal_handler(int sig __attribute__((unused))) { running = 0; }
 
 int check_root_permissions() {
   if (geteuid() != 0) {
@@ -97,7 +99,36 @@ int discover_devices(libusb_context *lctx) {
   return count;
 }
 
-int main() {
+void print_usage(const char *program_name) {
+  printf("Usage: %s [OPTIONS]\n", program_name);
+  printf("Options:\n");
+  printf("  --tui       Launch Text User Interface for configuration\n");
+  printf("  --cli       Use command line interface (default)\n");
+  printf("  --help, -h  Show this help message\n");
+  printf("\nExamples:\n");
+  printf("  %s --tui    # Launch TUI configuration\n", program_name);
+  printf("  %s          # Use CLI mode (default)\n", program_name);
+}
+
+int main(int argc, char *argv[]) {
+  // Parse command line arguments
+  int use_tui = 0;
+  
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "--tui") == 0) {
+      use_tui = 1;
+    } else if (strcmp(argv[i], "--cli") == 0) {
+      use_tui = 0;
+    } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+      print_usage(argv[0]);
+      return 0;
+    } else {
+      fprintf(stderr, "Unknown option: %s\n", argv[i]);
+      print_usage(argv[0]);
+      return 1;
+    }
+  }
+
   int permission_status = check_root_permissions();
   if (permission_status == 0) {
     fprintf(stderr, "[Error]: This program requires sudo permissions to "
@@ -126,7 +157,27 @@ int main() {
 
   printf("Scanning for controllers...\n");
 
-  int found = discover_devices(lctx);
+  int found;
+  
+  if (use_tui) {
+    // Initialize TUI
+    if (init_tui() != 0) {
+      fprintf(stderr, "Failed to initialize TUI\n");
+      libusb_exit(lctx);
+      return 1;
+    }
+    
+    // Run TUI configuration
+    run_tui_config(lctx);
+    
+    // Cleanup TUI
+    cleanup_tui();
+    
+    found = 1; // Assume we found something if TUI was used
+  } else {
+    // Use CLI mode
+    found = discover_devices(lctx);
+  }
 
   libusb_exit(lctx);
 

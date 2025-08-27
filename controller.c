@@ -2,9 +2,11 @@
 #include <libusb-1.0/libusb.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
 
 static volatile int keep_reading = 0;
 static libusb_device_handle *active_handle = NULL;
@@ -17,118 +19,125 @@ static libusb_device_handle *active_handle = NULL;
  *
  */
 
-int read_input(libusb_device_handle *handle, ControllerState *state) {
-  uint8_t buffer[MAX_INPUT_PACKET_SIZE]; // Devo mudar isto para usar a
-                                         // libusb_get_max_iso_packet_size()
-  int actual_lenght;
-  int ret;
-
-  // So para Xbox360, tenho que usar um switch mais tarde
-  ret = libusb_interrupt_transfer(handle, 0x81, buffer, sizeof(buffer),
-                                  &actual_lenght, 0);
-
-  if (ret == LIBUSB_ERROR_TIMEOUT)
+int claim_interface_safe(libusb_device_handle *handle) {
+    int ret;
+    
+    if (libusb_kernel_driver_active(handle, 0) == 1) {
+        ret = libusb_detach_kernel_driver(handle, 0);
+        if (ret != 0) {
+            fprintf(stderr, "Failed to detach kernel driver: %s\n", libusb_strerror(ret));
+            return -1;
+        }
+        printf("Kernel driver detached\n");
+    }
+    
+    ret = libusb_claim_interface(handle, 0);
+    if (ret != 0) {
+        fprintf(stderr, "Failed to claim interface: %s\n", libusb_strerror(ret));
+        return -1;
+    }
+    
     return 0;
-
-  if (actual_lenght >= 20) {
-    uint8_t buttons1 = buffer[2];
-    uint8_t buttons2 = buffer[3];
-
-    // Main buttons (buttons1)
-    state->buttons[0] = buttons1; // Store raw button bytes for debugging
-    state->buttons[1] = buttons2;
-
-    state->dpad_up = (buttons1 & 0x01) ? 1 : 0;    // Bit 0 - Up
-    state->dpad_down = (buttons1 & 0x02) ? 1 : 0;  // Bit 1 - Down
-    state->dpad_left = (buttons1 & 0x04) ? 1 : 0;  // Bit 2 - Left
-    state->dpad_right = (buttons1 & 0x08) ? 1 : 0; // Bit 3 - Right
-
-    // A/B/X/Y buttons are in buttons2 (buffer[3]) - upper 4 bits
-    state->a_button = (buttons2 & 0x10) ? 1 : 0; // Bit 4 - A
-    state->b_button = (buttons2 & 0x20) ? 1 : 0; // Bit 5 - B
-    state->x_button = (buttons2 & 0x40) ? 1 : 0; // Bit 6 - X
-    state->y_button = (buttons2 & 0x80) ? 1 : 0; // Bit 7 - Y
-
-    state->lb_button = 0;    // Need to test LB
-    state->rb_button = 0;    // Need to test RB
-    state->back_button = 0;  // Need to test Back
-    state->start_button = 0; // Need to test Start
-    state->l3_button = 0;    // Need to test L3
-    state->r3_button = 0;    // Need to test R3
-    state->xbox_button = 0;  // Need to test Xbox
-
-    return 1;
-  }
-
-  return 0;
 }
+
+void release_interface_safe(libusb_device_handle *handle) {
+    libusb_release_interface(handle, 0);
+    
+    if (libusb_kernel_driver_active(handle, 0) == 0) {
+        libusb_attach_kernel_driver(handle, 0);
+    }
+}
+
 
 int wait_for_button_press(libusb_device_handle *handle, const char *button_name,
                           uint8_t *found_byte, uint8_t *found_bit) {
-  uint8_t buffer[MAX_INPUT_PACKET_SIZE];
-  uint8_t last_buffer[MAX_INPUT_PACKET_SIZE] = {0};
-  int attempts = 0;
+    uint8_t buffer[MAX_INPUT_PACKET_SIZE];
+    uint8_t last_buffer[MAX_INPUT_PACKET_SIZE] = {0};
+    int attempts = 0;
+    const int max_attempts = 300; 
 
-  printf("Press the %s button and hold until told\n",
-         button_name); // Add newline
+    printf("Press the %s button...\n", button_name);
 
-  while (attempts < 1200) {
-    int actual_length = 0;
-    int ret = libusb_interrupt_transfer(handle, 0x81, buffer, sizeof(buffer),
-                                        &actual_length, 100);
+    while (attempts < max_attempts) {
+        int actual_length = 0;
+        int ret = libusb_interrupt_transfer(handle, 0x81, buffer, sizeof(buffer),
+                                            &actual_length, 100); 
 
-    if (ret == LIBUSB_ERROR_TIMEOUT) {
-      attempts++;
-      usleep(10000);
-      continue;
-    }
-
-    if (ret != 0 || actual_length < 20) {
-      attempts++;
-      continue;
-    }
-
-    for (int byte = 2; byte < 6; byte++) {
-      for (int bit = 0; bit < 8; bit++) {
-        uint8_t mask = (1 << bit);
-        if ((buffer[byte] & mask) && !(last_buffer[byte] & mask)) {
-          *found_byte = byte;
-          *found_bit = bit;
-
-          printf("Detected %s button on byte %d bit %d\n", button_name,
-                 *found_byte, *found_bit);
-
-          printf("Please release the button\n");
-
-          int release_attempts = 0;
-          while (release_attempts < 50) {
-            ret = libusb_interrupt_transfer(handle, 0x81, buffer,
-                                            sizeof(buffer), &actual_length, 50);
-
-            if (ret == 0 && actual_length >= 20) {
-              if (!(buffer[byte] & mask)) {
-                printf("Button released! Ready for next input\n");
-                return 0;
-              }
-            }
-            release_attempts++;
-            usleep(10000);
-          }
-          printf("Timeout waiting for button release\n");
-          return -1;
+        if (ret == LIBUSB_ERROR_TIMEOUT) {
+            attempts++;
+            continue;
         }
-      }
+
+        if (ret < 0) {
+            if (errno == EBUSY) {
+                fprintf(stderr, "Device busy, reinitializing interface...\n");
+                release_interface_safe(handle);
+                usleep(100000); 
+                if (claim_interface_safe(handle) != 0) {
+                    fprintf(stderr, "Failed to reinitialize interface\n");
+                    return -1;
+                }
+                printf("Interface reinitialized successfully\n");
+            }
+            attempts++;
+            continue;
+        }
+
+        if (actual_length < 20) {
+            attempts++;
+            continue;
+        }
+
+        for (int byte = 2; byte < 6; byte++) {
+            for (int bit = 0; bit < 8; bit++) {
+                uint8_t mask = (1 << bit);
+                if ((buffer[byte] & mask) && !(last_buffer[byte] & mask)) {
+                    *found_byte = byte;
+                    *found_bit = bit;
+
+                    printf("✓ Detected %s button: Byte %d, Bit %d\n", button_name,
+                           *found_byte, *found_bit);
+
+                    printf("Please release the button...\n");
+
+                    int release_attempts = 0;
+                    while (release_attempts < 100) { 
+                        ret = libusb_interrupt_transfer(handle, 0x81, buffer,
+                                                sizeof(buffer), &actual_length, 100);
+
+                        if (ret == 0 && actual_length >= 20) {
+                            if (!(buffer[byte] & mask)) {
+                                printf("✓ Button released\n\n");
+                                return 0;
+                            }
+                        }
+                        release_attempts++;
+                        usleep(10000);
+                    }
+                    printf("Timeout waiting for button release\n");
+                    return -1;
+                }
+            }
+        }
+        
+        memcpy(last_buffer, buffer, sizeof(last_buffer));
+        attempts++;
+        usleep(10000);
     }
-    memcpy(last_buffer, buffer, sizeof(last_buffer));
-    attempts++;
-    usleep(10000);
-  }
-  printf("Timeout waiting for button press\n");
-  return -1;
+    
+    printf("Timeout waiting for %s button\n", button_name);
+    return -1;
 }
+
 int interactive_setup(libusb_device_handle *handle, ControllerConfig *config) {
   printf("=== Controller Interactive Setup ===\n");
   printf("We'll now map each button. Press each button when prompted.\n\n");
+
+   if (claim_interface_safe(handle) != 0) {
+        fprintf(stderr, "Failed to setup interface for configuration\n");
+        return -1;
+    }
+
 
   if (wait_for_button_press(handle, "A", &config->a_button_byte,
                             &config->a_button_bit) != 0)
@@ -181,7 +190,8 @@ int interactive_setup(libusb_device_handle *handle, ControllerConfig *config) {
 
   printf("Enter a name for this controller configuration: ");
   fgets(config->controller_name, sizeof(config->controller_name), stdin);
-  config->controller_name[strcspn(config->controller_name, "\n")] = 0;
+  config->controller_name[strcspn(config->controller_name, "\n")] =
+      0; 
 
   printf("\nSetup complete! Configuration saved.\n");
   return 0;
@@ -562,15 +572,12 @@ int load_config(ControllerConfig *config, const char *filename) {
 
   char line[256];
   while (fgets(line, sizeof(line), file)) {
-    // Remove newline
     line[strcspn(line, "\n")] = 0;
 
-    // Skip comments and empty lines
     if (line[0] == '#' || line[0] == '[' || line[0] == '\0') {
       continue;
     }
 
-    // Parse key=value pairs
     char *key = strtok(line, "=");
     char *value = strtok(NULL, "=");
 
@@ -663,5 +670,16 @@ const char *controller_type_to_string(ControllerType type) {
     return "Other Controller";
   default:
     return "Unknown Controller";
+  }
+}
+
+void free_controllers(ControllerInfo *controllers, int count) {
+  if (controllers != NULL) {
+    for (int i = 0; i < count; i++) {
+      if (controllers[i].device) {
+        libusb_unref_device(controllers[i].device);
+      }
+    }
+    free(controllers);
   }
 }

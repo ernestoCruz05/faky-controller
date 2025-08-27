@@ -67,10 +67,8 @@ typedef struct {
 } ControllerInfo;
 
 typedef struct {
-  // Raw button bytes for debugging
   uint8_t buttons[4];
 
-  // Individual buttons
   uint8_t a_button;
   uint8_t b_button;
   uint8_t x_button;
@@ -83,13 +81,11 @@ typedef struct {
   uint8_t r3_button;
   uint8_t xbox_button;
 
-  // D-pad
   uint8_t dpad_up;
   uint8_t dpad_right;
   uint8_t dpad_down;
   uint8_t dpad_left;
 
-  // Analog inputs
   int16_t left_thumb_x;
   int16_t left_thumb_y;
   int16_t right_thumb_x;
@@ -100,7 +96,7 @@ typedef struct {
 
 typedef struct {
   uint8_t a_button_bit;
-  uint8_t a_button_byte; // 2 = buttons1, 3 = buttons2, etc.
+  uint8_t a_button_byte; 
 
   uint8_t b_button_bit;
   uint8_t b_button_byte;
@@ -166,5 +162,7 @@ int load_config(ControllerConfig *config, const char *filename);
 int read_controller_input_with_config(libusb_device_handle *handle,
                                       ControllerState *state,
                                       const ControllerConfig *config);
+int claim_interface_safe(libusb_device_handle *handle);
+void release_interface_safe(libusb_device_handle *handle);
 
 #endif /* CONTROLLER_H */
