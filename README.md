@@ -1,4 +1,4 @@
-# Faky Controller
+# InputRelay
 - USB controller detection via libusb
 - ---
 
